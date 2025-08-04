@@ -1,12 +1,36 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { FIVE_MINUTES, TWENTY_FOUR_HOURS } from "@/constants/time";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+	defaultOptions: {
+		queries: {
+			gcTime: TWENTY_FOUR_HOURS,
+			staleTime: FIVE_MINUTES,
+			networkMode: "offlineFirst", // Enable offline-first mode
+			refetchOnWindowFocus: false,
+		},
+		mutations: {
+			networkMode: "offlineFirst", // Enable offline-first mode for mutations
+		},
+	},
+});
+
+const persister = createAsyncStoragePersister({
+	storage: AsyncStorage,
+	key: "REACT_QUERY_OFFLINE_CACHE",
+});
 
 export default function RootLayout() {
 	return (
-		<QueryClientProvider client={queryClient}>
+		<PersistQueryClientProvider
+			client={queryClient}
+			persistOptions={{ persister }}
+		>
 			<SafeAreaProvider>
 				<Stack>
 					<Stack.Screen
@@ -26,6 +50,6 @@ export default function RootLayout() {
 					/>
 				</Stack>
 			</SafeAreaProvider>
-		</QueryClientProvider>
+		</PersistQueryClientProvider>
 	);
 }

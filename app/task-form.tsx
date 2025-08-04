@@ -1,31 +1,29 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useLocalSearchParams } from "expo-router";
+import { useCallback } from "react";
+import { Controller } from "react-hook-form";
 import {
-	ActivityIndicator,
-	Alert,
+	KeyboardAvoidingView,
+	Platform,
 	ScrollView,
 	StyleSheet,
 	Switch,
 	Text,
-	TextInput,
-	TouchableOpacity,
 	View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+import { Button, Input, LoadingIndicator } from "@/components";
+import { FIELD_LIMITS } from "@/constants";
+import { Colors } from "@/styles/colors";
+import { Dimensions } from "@/styles/dimensions";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { useTaskForm } from "../hooks/useTaskForm";
+import { useTaskMutations } from "../hooks/useTaskMutations";
 import { taskApi } from "../services/api";
-import type { Task } from "../types/Task";
 
 export default function TaskFormScreen() {
-	const router = useRouter();
-	const queryClient = useQueryClient();
 	const { id } = useLocalSearchParams();
-
-	const [title, setTitle] = useState("");
-	const [description, setDescription] = useState("");
-	const [completed, setCompleted] = useState(false);
-	const [assignee, setAssignee] = useState("");
-
 	const isEditing = Boolean(id);
 
 	const { data: task, isLoading } = useQuery({
@@ -34,253 +32,271 @@ export default function TaskFormScreen() {
 		enabled: isEditing,
 	});
 
-	const createMutation = useMutation({
-		mutationFn: taskApi.create,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["tasks"] });
-			router.back();
-		},
-	});
+	const form = useTaskForm({ task });
+	const { control, handleSubmit, formState } = form;
+	const { errors, isSubmitted } = formState;
 
-	const updateMutation = useMutation({
-		mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) =>
-			taskApi.update(id, data),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["tasks"] });
-			queryClient.invalidateQueries({ queryKey: ["task", id] });
-			router.back();
-		},
-	});
+	const {
+		createMutation,
+		updateMutation,
+		deleteMutation,
+		handleSave,
+		handleDelete,
+	} = useTaskMutations();
 
-	const deleteMutation = useMutation({
-		mutationFn: taskApi.delete,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["tasks"] });
-			router.back();
-		},
-	});
+	const { isOnline } = useNetworkStatus();
 
-	useEffect(() => {
-		if (task) {
-			setTitle(task.title);
-			setDescription(task.description);
-			setCompleted(task.completed);
-			setAssignee(task.assignee);
-		}
-	}, [task]);
+	const onSubmit = useCallback(
+		(data: Parameters<typeof handleSave>[0]) => {
+			try {
+				const formData = {
+					title: data.title?.trim() || "",
+					description: data.description?.trim() || "",
+					assignee: data.assignee?.trim() || "",
+					completed: data.completed || false,
+				};
+				handleSave(formData, isEditing, id as string);
+			} catch (error) {
+				console.error("Form submission error:", error);
+			}
+		},
+		[handleSave, isEditing, id],
+	);
+
+	const handleDeletePress = useCallback(() => {
+		handleDelete(id as string);
+	}, [handleDelete, id]);
 
 	if (isLoading) {
 		return (
-			<SafeAreaView style={[styles.safeArea, styles.centered]}>
-				<ActivityIndicator size="large" color="#007AFF" />
+			<SafeAreaView style={styles.safeArea}>
+				<LoadingIndicator isFullScreen message="Loading task..." />
 			</SafeAreaView>
 		);
 	}
 
-	const handleSave = () => {
-		if (!title.trim()) {
-			Alert.alert("Error", "Please enter a task title");
-			return;
-		}
-
-		if (!assignee.trim()) {
-			Alert.alert("Error", "Please enter an assignee");
-			return;
-		}
-
-		const taskData = {
-			title: title.trim(),
-			description: description.trim(),
-			completed,
-			assignee: assignee.trim(),
-		};
-
-		if (isEditing) {
-			updateMutation.mutate({ id: id as string, data: taskData });
-		} else {
-			createMutation.mutate(taskData);
-		}
-	};
-
-	const handleDelete = () => {
-		Alert.alert("Delete Task", "Are you sure you want to delete this task?", [
-			{ text: "Cancel", style: "cancel" },
-			{
-				text: "Delete",
-				style: "destructive",
-				onPress: () => {
-					deleteMutation.mutate(id as string);
-				},
-			},
-		]);
-	};
-
 	return (
 		<SafeAreaView style={styles.safeArea} edges={["bottom", "left", "right"]}>
-			<ScrollView
-				style={styles.container}
-				contentContainerStyle={styles.contentContainer}
-			>
-				<View style={styles.form}>
-					<View style={styles.inputGroup}>
-						<Text style={styles.label}>Title *</Text>
-						<TextInput
-							style={styles.textInput}
-							value={title}
-							onChangeText={setTitle}
-							placeholder="Enter task title"
-							placeholderTextColor="#999"
-						/>
-					</View>
-					<View style={styles.inputGroup}>
-						<Text style={styles.label}>Description</Text>
-						<TextInput
-							style={[styles.textInput, styles.textArea]}
-							value={description}
-							onChangeText={setDescription}
-							placeholder="Enter task description"
-							placeholderTextColor="#999"
-							multiline
-							numberOfLines={4}
-							textAlignVertical="top"
-						/>
-					</View>
-					<View style={styles.inputGroup}>
-						<Text style={styles.label}>Assignee *</Text>
-						<TextInput
-							style={styles.textInput}
-							value={assignee}
-							onChangeText={setAssignee}
-							placeholder="Enter assignee name"
-							placeholderTextColor="#999"
-						/>
-					</View>
-					{isEditing && (
-						<View style={styles.inputGroup}>
-							<View style={styles.switchContainer}>
-								<Text style={styles.label}>Completed</Text>
-								<Switch
-									value={completed}
-									onValueChange={setCompleted}
-									trackColor={{ false: "#e0e0e0", true: "#34c759" }}
-									thumbColor={completed ? "#fff" : "#f4f3f4"}
-								/>
-							</View>
-						</View>
-					)}
-					<TouchableOpacity
-						style={[
-							styles.saveButton,
-							(createMutation.isPending || updateMutation.isPending) &&
-								styles.disabledButton,
-						]}
-						onPress={handleSave}
-						disabled={createMutation.isPending || updateMutation.isPending}
-					>
-						<Text style={styles.saveButtonText}>
-							{createMutation.isPending || updateMutation.isPending
-								? "Saving..."
-								: isEditing
-									? "Update Task"
-									: "Create Task"}
-						</Text>
-					</TouchableOpacity>
-					{isEditing && (
-						<TouchableOpacity
-							style={[
-								styles.deleteButton,
-								deleteMutation.isPending && styles.disabledButton,
-							]}
-							onPress={handleDelete}
-							disabled={deleteMutation.isPending}
-						>
-							<Text style={styles.deleteButtonText}>
-								{deleteMutation.isPending ? "Deleting..." : "Delete Task"}
-							</Text>
-						</TouchableOpacity>
-					)}
+			{!isOnline && (
+				<View style={styles.offlineBanner}>
+					<Text style={styles.offlineBannerText}>
+						You&apos;re offline. Changes will be retried when you reconnect.
+					</Text>
 				</View>
-			</ScrollView>
+			)}
+			<KeyboardAvoidingView
+				style={styles.flex}
+				behavior={Platform.OS === "ios" ? "padding" : "height"}
+			>
+				<ScrollView
+					style={styles.container}
+					contentContainerStyle={styles.contentContainer}
+					keyboardShouldPersistTaps="handled"
+				>
+					<View style={styles.form}>
+						{(createMutation.error ||
+							updateMutation.error ||
+							deleteMutation.error) && (
+							<View style={styles.errorContainer}>
+								<Text style={styles.errorText}>
+									{createMutation.error?.message ||
+										updateMutation.error?.message ||
+										deleteMutation.error?.message}
+								</Text>
+							</View>
+						)}
+						<Controller
+							control={control}
+							name="title"
+							render={({ field: { onChange, onBlur, value } }) => (
+								<Input
+									label="Title"
+									required
+									value={value}
+									onChangeText={onChange}
+									onBlur={onBlur}
+									placeholder="Enter task title"
+									accessibilityLabel="Task title"
+									testID="title-input"
+									returnKeyType="next"
+									maxLength={FIELD_LIMITS.TITLE_MAX_LENGTH}
+									error={
+										isSubmitted && errors.title
+											? errors.title.message
+											: undefined
+									}
+								/>
+							)}
+						/>
+						<Controller
+							control={control}
+							name="description"
+							render={({ field: { onChange, onBlur, value } }) => (
+								<Input
+									label="Description"
+									value={value}
+									onChangeText={onChange}
+									onBlur={onBlur}
+									placeholder="Enter task description"
+									multiline
+									accessibilityLabel="Task description"
+									testID="description-input"
+									maxLength={FIELD_LIMITS.DESCRIPTION_MAX_LENGTH}
+									error={
+										isSubmitted && errors.description
+											? errors.description.message
+											: undefined
+									}
+								/>
+							)}
+						/>
+						<Controller
+							control={control}
+							name="assignee"
+							render={({ field: { onChange, onBlur, value } }) => (
+								<Input
+									label="Assignee"
+									required
+									value={value}
+									onChangeText={onChange}
+									onBlur={onBlur}
+									placeholder="Enter assignee name"
+									accessibilityLabel="Task assignee"
+									testID="assignee-input"
+									returnKeyType="done"
+									maxLength={FIELD_LIMITS.ASSIGNEE_MAX_LENGTH}
+									error={
+										isSubmitted && errors.assignee
+											? errors.assignee.message
+											: undefined
+									}
+								/>
+							)}
+						/>
+						{isEditing && (
+							<View style={styles.inputGroup}>
+								<View style={styles.switchContainer}>
+									<Text style={styles.label}>Completed</Text>
+									<Controller
+										control={control}
+										name="completed"
+										render={({ field: { onChange, value } }) => (
+											<Switch
+												value={value}
+												onValueChange={onChange}
+												trackColor={{
+													false: Colors.borderGray,
+													true: Colors.success,
+												}}
+												thumbColor={value ? Colors.white : Colors.paleGray}
+												accessibilityLabel="Task completion status"
+												testID="completed-switch"
+											/>
+										)}
+									/>
+								</View>
+							</View>
+						)}
+						<Button
+							title={isEditing ? "Update Task" : "Create Task"}
+							variant="primary"
+							isLoading={createMutation.isPending || updateMutation.isPending}
+							loadingText="Saving..."
+							onPress={handleSubmit(onSubmit)}
+							accessibilityLabel={isEditing ? "Update task" : "Create task"}
+							testID="save-button"
+							fullWidth
+							style={styles.saveButton}
+							disabled={
+								!isOnline &&
+								(createMutation.isPending || updateMutation.isPending)
+							}
+						/>
+						{isEditing && (
+							<Button
+								title="Delete Task"
+								variant="danger"
+								isLoading={deleteMutation.isPending}
+								loadingText="Deleting..."
+								onPress={handleDeletePress}
+								accessibilityLabel="Delete task"
+								testID="delete-button"
+								fullWidth
+								style={styles.deleteButton}
+							/>
+						)}
+					</View>
+				</ScrollView>
+			</KeyboardAvoidingView>
 		</SafeAreaView>
 	);
 }
 
 const styles = StyleSheet.create({
+	flex: {
+		flex: 1,
+	},
 	safeArea: {
 		flex: 1,
-		backgroundColor: "#f5f5f5",
+		backgroundColor: Colors.backgroundGray,
 	},
 	container: {
 		flex: 1,
-		backgroundColor: "#f5f5f5",
+		backgroundColor: Colors.backgroundGray,
 	},
 	contentContainer: {
 		flexGrow: 1,
 	},
 	form: {
-		padding: 20,
+		padding: Dimensions.spacing.xxl,
 	},
 	inputGroup: {
-		marginBottom: 20,
+		marginBottom: Dimensions.spacing.xxl,
 	},
 	label: {
-		fontSize: 16,
+		fontSize: Dimensions.fontSize.md,
 		fontWeight: "600",
-		color: "#333",
-		marginBottom: 8,
-	},
-	textInput: {
-		backgroundColor: "#fff",
-		borderRadius: 10,
-		padding: 15,
-		fontSize: 16,
-		borderWidth: 1,
-		borderColor: "#e0e0e0",
-		color: "#333",
-	},
-	textArea: {
-		height: 100,
-		paddingTop: 15,
+		color: Colors.darkGray,
 	},
 	switchContainer: {
 		flexDirection: "row",
 		justifyContent: "space-between",
 		alignItems: "center",
-		backgroundColor: "#fff",
-		borderRadius: 10,
-		padding: 15,
-		borderWidth: 1,
-		borderColor: "#e0e0e0",
+		backgroundColor: Colors.white,
+		borderRadius: Dimensions.borderRadius.lg,
+		padding: Dimensions.spacing.xl,
+		borderWidth: Dimensions.input.borderWidth,
+		borderColor: Colors.borderGray,
 	},
 	saveButton: {
-		backgroundColor: "#007AFF",
-		borderRadius: 10,
-		padding: 15,
-		alignItems: "center",
-		marginTop: 10,
-	},
-	saveButtonText: {
-		color: "#fff",
-		fontSize: 16,
-		fontWeight: "600",
+		marginTop: Dimensions.spacing.md,
 	},
 	deleteButton: {
-		backgroundColor: "#ff3b30",
-		borderRadius: 10,
-		padding: 15,
-		alignItems: "center",
-		marginTop: 10,
+		marginTop: Dimensions.spacing.md,
 	},
-	deleteButtonText: {
-		color: "#fff",
-		fontSize: 16,
-		fontWeight: "600",
-	},
-	centered: {
-		justifyContent: "center",
+	offlineBanner: {
+		backgroundColor: Colors.warning,
+		paddingVertical: Dimensions.spacing.sm,
+		paddingHorizontal: Dimensions.spacing.xxl,
 		alignItems: "center",
 	},
-	disabledButton: {
-		opacity: 0.6,
+	offlineBannerText: {
+		color: Colors.white,
+		fontSize: Dimensions.fontSize.sm,
+		fontWeight: "500",
+	},
+	errorContainer: {
+		backgroundColor: Colors.errorLight || `${Colors.error}20`,
+		borderRadius: Dimensions.borderRadius.md,
+		padding: Dimensions.spacing.lg,
+		marginBottom: Dimensions.spacing.xl,
+		borderWidth: 1,
+		borderColor: Colors.error,
+	},
+	errorText: {
+		color: Colors.error,
+		fontSize: Dimensions.fontSize.sm,
+		fontWeight: "500",
+		textAlign: "center",
 	},
 });
