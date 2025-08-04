@@ -9,6 +9,7 @@ import { Alert } from "react-native";
 import { taskApi, type PaginatedResponse } from "../services/api";
 import type { Task } from "../types/Task";
 import { handleMutationError } from "../utils/errorHandling";
+import { compareTasks } from "../utils/sort";
 
 type InfiniteTaskData = InfiniteData<PaginatedResponse<Task>>;
 
@@ -35,71 +36,142 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 	const queryClient = useQueryClient();
 
 	const cancelQueries = async (taskId?: string) => {
-		await queryClient.cancelQueries({ queryKey: ["tasks"] });
-		await queryClient.cancelQueries({ queryKey: ["tasks", "infinite"] });
-		if (taskId) {
-			await queryClient.cancelQueries({ queryKey: ["task", taskId] });
+		try {
+			await Promise.all([
+				queryClient.cancelQueries({ queryKey: ["tasks"], exact: false }),
+				queryClient.cancelQueries({
+					queryKey: ["tasks", "infinite"],
+					exact: false,
+				}),
+				...(taskId
+					? [queryClient.cancelQueries({ queryKey: ["task", taskId] })]
+					: []),
+			]);
+		} catch (error) {
+			console.error("Error cancelling queries:", error);
 		}
 	};
 
 	const invalidateQueries = (taskId?: string) => {
-		queryClient.invalidateQueries({ queryKey: ["tasks"], exact: false });
-		if (taskId) {
-			queryClient.invalidateQueries({ queryKey: ["task", taskId] });
+		try {
+			queryClient.invalidateQueries({ queryKey: ["tasks"], exact: false });
+			queryClient.invalidateQueries({
+				queryKey: ["tasks", "infinite"],
+				exact: false,
+			});
+			if (taskId) {
+				queryClient.invalidateQueries({ queryKey: ["task", taskId] });
+			}
+		} catch (error) {
+			console.error("Error invalidating queries:", error);
 		}
 	};
 
 	const createMutation = useMutation({
 		mutationFn: taskApi.create,
 		onMutate: async (newTask) => {
-			await cancelQueries();
+			try {
+				await cancelQueries();
 
-			const previousTasks = queryClient.getQueryData<Task[]>(["tasks"]);
-			const previousInfinite = queryClient.getQueryData<InfiniteTaskData>([
-				"tasks",
-				"infinite",
-			]);
+				const previousTasks = queryClient.getQueryData<Task[]>(["tasks"]);
 
-			const optimisticTask: Task = {
-				...newTask,
-				id: `optimistic-${Date.now()}`,
-				createdAt: new Date().toISOString(),
-			};
+				const allQueries = queryClient
+					.getQueryCache()
+					.findAll({ queryKey: ["tasks", "infinite"], exact: false });
+				const previousInfiniteQueries = allQueries.map((query) => ({
+					queryKey: query.queryKey,
+					data: query.state.data as InfiniteTaskData,
+				}));
 
-			if (previousTasks) {
-				queryClient.setQueryData<Task[]>(
-					["tasks"],
-					[optimisticTask, ...previousTasks],
-				);
-			}
+				const optimisticTask: Task = {
+					...newTask,
+					id: `optimistic-${Date.now()}`,
+					createdAt: new Date().toISOString(),
+				};
 
-			if (previousInfinite?.pages) {
-				queryClient.setQueryData(["tasks", "infinite"], {
-					...previousInfinite,
-					pages: previousInfinite.pages.map((p, idx: number) =>
-						idx === 0 ? { ...p, data: [optimisticTask, ...p.data] } : p,
-					),
+				if (previousTasks) {
+					const sortedTasks = [optimisticTask, ...previousTasks].sort(
+						compareTasks,
+					);
+					queryClient.setQueryData<Task[]>(["tasks"], sortedTasks);
+				}
+
+				// Update all infinite query caches
+				previousInfiniteQueries.forEach(({ queryKey, data }) => {
+					if (data?.pages) {
+						const updatedPages = data.pages.map((p, idx: number) => {
+							if (idx === 0) {
+								const sortedData = [optimisticTask, ...p.data].sort(
+									compareTasks,
+								);
+								return { ...p, data: sortedData };
+							}
+							return p;
+						});
+						queryClient.setQueryData(queryKey, {
+							...data,
+							pages: updatedPages,
+						});
+					}
 				});
-			}
 
-			return { previousTasks, previousInfinite } as const;
+				return { previousTasks, previousInfiniteQueries } as const;
+			} catch (error) {
+				console.error("Error during optimistic update:", error);
+				return { previousTasks: null, previousInfiniteQueries: [] };
+			}
 		},
 		onError: (error, _variables, context) => {
 			if (context?.previousTasks) {
 				queryClient.setQueryData(["tasks"], context.previousTasks);
 			}
-			if (context?.previousInfinite) {
-				queryClient.setQueryData(
-					["tasks", "infinite"],
-					context.previousInfinite,
-				);
+			if (context?.previousInfiniteQueries) {
+				context.previousInfiniteQueries.forEach(({ queryKey, data }) => {
+					queryClient.setQueryData(queryKey, data);
+				});
 			}
 			handleMutationError(error, "Failed to create task. Please try again.");
 		},
-		onSettled: () => {
-			invalidateQueries();
-		},
-		onSuccess: () => {
+		onSuccess: (newTask) => {
+			// Update caches with the server response instead of invalidating
+			const previousTasks = queryClient.getQueryData<Task[]>(["tasks"]);
+			if (previousTasks) {
+				const tasksWithoutOptimistic = previousTasks.filter(
+					(t) => !t.id.startsWith("optimistic-"),
+				);
+				const sortedTasks = [newTask, ...tasksWithoutOptimistic].sort(
+					compareTasks,
+				);
+				queryClient.setQueryData<Task[]>(["tasks"], sortedTasks);
+			}
+
+			// Update infinite query caches
+			const allQueries = queryClient
+				.getQueryCache()
+				.findAll({ queryKey: ["tasks", "infinite"], exact: false });
+
+			allQueries.forEach((query) => {
+				const data = query.state.data as InfiniteTaskData;
+				if (data?.pages) {
+					const updatedPages = data.pages.map((p, idx: number) => {
+						if (idx === 0) {
+							const tasksWithoutOptimistic = p.data.filter(
+								(t) => !t.id.startsWith("optimistic-"),
+							);
+							const sortedData = [newTask, ...tasksWithoutOptimistic].sort(
+								compareTasks,
+							);
+							return { ...p, data: sortedData };
+						}
+						return p;
+					});
+					queryClient.setQueryData(query.queryKey, {
+						...data,
+						pages: updatedPages,
+					});
+				}
+			});
+
 			router.back();
 		},
 		retry: 2,
@@ -110,54 +182,71 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 		mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) =>
 			taskApi.update(id, data),
 		onMutate: async ({ id, data }) => {
-			await cancelQueries(id);
+			try {
+				await cancelQueries(id);
 
-			const previousTasks = queryClient.getQueryData<Task[]>(["tasks"]);
-			const previousInfinite = queryClient.getQueryData<InfiniteTaskData>([
-				"tasks",
-				"infinite",
-			]);
-			const previousTask = queryClient.getQueryData<Task>(["task", id]);
+				const previousTasks = queryClient.getQueryData<Task[]>(["tasks"]);
+				const allQueries = queryClient
+					.getQueryCache()
+					.findAll({ queryKey: ["tasks", "infinite"], exact: false });
+				const previousInfiniteQueries = allQueries.map((query) => ({
+					queryKey: query.queryKey,
+					data: query.state.data as InfiniteTaskData,
+				}));
+				const previousTask = queryClient.getQueryData<Task>(["task", id]);
 
-			if (previousTasks) {
-				queryClient.setQueryData<Task[]>(
-					["tasks"],
-					previousTasks.map((t) =>
-						t.id === id ? ({ ...t, ...data } as Task) : t,
-					),
-				);
-			}
-
-			if (previousInfinite?.pages) {
-				queryClient.setQueryData(["tasks", "infinite"], {
-					...previousInfinite,
-					pages: previousInfinite.pages.map((p) => ({
-						...p,
-						data: p.data.map((t: Task) =>
-							t.id === id ? { ...t, ...data } : t,
+				if (previousTasks) {
+					queryClient.setQueryData<Task[]>(
+						["tasks"],
+						previousTasks.map((t) =>
+							t.id === id ? ({ ...t, ...data } as Task) : t,
 						),
-					})),
-				});
-			}
+					);
+				}
 
-			if (previousTask) {
-				queryClient.setQueryData<Task>(["task", id], {
-					...previousTask,
-					...data,
+				previousInfiniteQueries.forEach(({ queryKey, data: infiniteData }) => {
+					if (infiniteData?.pages) {
+						queryClient.setQueryData(queryKey, {
+							...infiniteData,
+							pages: infiniteData.pages.map((p) => ({
+								...p,
+								data: p.data.map((t: Task) =>
+									t.id === id ? { ...t, ...data } : t,
+								),
+							})),
+						});
+					}
 				});
-			}
 
-			return { previousTasks, previousInfinite, previousTask } as const;
+				if (previousTask) {
+					queryClient.setQueryData<Task>(["task", id], {
+						...previousTask,
+						...data,
+					});
+				}
+
+				return {
+					previousTasks,
+					previousInfiniteQueries,
+					previousTask,
+				} as const;
+			} catch (error) {
+				console.error("Error during optimistic update:", error);
+				return {
+					previousTasks: null,
+					previousInfiniteQueries: [],
+					previousTask: null,
+				};
+			}
 		},
 		onError: (error, variables, context) => {
 			if (context?.previousTasks) {
 				queryClient.setQueryData(["tasks"], context.previousTasks);
 			}
-			if (context?.previousInfinite) {
-				queryClient.setQueryData(
-					["tasks", "infinite"],
-					context.previousInfinite,
-				);
+			if (context?.previousInfiniteQueries) {
+				context.previousInfiniteQueries.forEach(({ queryKey, data }) => {
+					queryClient.setQueryData(queryKey, data);
+				});
 			}
 			if (context?.previousTask) {
 				queryClient.setQueryData(["task", variables.id], context.previousTask);
@@ -177,51 +266,68 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 	const deleteMutation = useMutation({
 		mutationFn: taskApi.delete,
 		onMutate: async (id) => {
-			await cancelQueries(id);
+			try {
+				await cancelQueries(id);
 
-			const previousTasks = queryClient.getQueryData<Task[]>(["tasks"]);
-			const previousInfinite = queryClient.getQueryData<InfiniteTaskData>([
-				"tasks",
-				"infinite",
-			]);
-			const previousTask = queryClient.getQueryData<Task>(["task", id]);
+				const previousTasks = queryClient.getQueryData<Task[]>(["tasks"]);
+				const allQueries = queryClient
+					.getQueryCache()
+					.findAll({ queryKey: ["tasks", "infinite"], exact: false });
+				const previousInfiniteQueries = allQueries.map((query) => ({
+					queryKey: query.queryKey,
+					data: query.state.data as InfiniteTaskData,
+				}));
+				const previousTask = queryClient.getQueryData<Task>(["task", id]);
 
-			if (previousTasks) {
-				queryClient.setQueryData<Task[]>(
-					["tasks"],
-					previousTasks.filter((t) => t.id !== id),
-				);
-			}
+				if (previousTasks) {
+					queryClient.setQueryData<Task[]>(
+						["tasks"],
+						previousTasks.filter((t) => t.id !== id),
+					);
+				}
 
-			if (previousInfinite?.pages) {
-				queryClient.setQueryData(["tasks", "infinite"], {
-					...previousInfinite,
-					pages: previousInfinite.pages.map((p) => ({
-						...p,
-						data: p.data.filter((t: Task) => t.id !== id),
-					})),
+				previousInfiniteQueries.forEach(({ queryKey, data }) => {
+					if (data?.pages) {
+						queryClient.setQueryData(queryKey, {
+							...data,
+							pages: data.pages.map((p) => ({
+								...p,
+								data: p.data.filter((t: Task) => t.id !== id),
+							})),
+						});
+					}
 				});
-			}
 
-			return { previousTasks, previousInfinite, previousTask } as const;
+				return {
+					previousTasks,
+					previousInfiniteQueries,
+					previousTask,
+				} as const;
+			} catch (error) {
+				console.error("Error during optimistic update:", error);
+				return {
+					previousTasks: null,
+					previousInfiniteQueries: [],
+					previousTask: null,
+				};
+			}
 		},
 		onError: (error, id, context) => {
 			if (context?.previousTasks) {
 				queryClient.setQueryData(["tasks"], context.previousTasks);
 			}
-			if (context?.previousInfinite) {
-				queryClient.setQueryData(
-					["tasks", "infinite"],
-					context.previousInfinite,
-				);
+			if (context?.previousInfiniteQueries) {
+				context.previousInfiniteQueries.forEach(({ queryKey, data }) => {
+					queryClient.setQueryData(queryKey, data);
+				});
 			}
 			if (context?.previousTask) {
 				queryClient.setQueryData(["task", id], context.previousTask);
 			}
 			handleMutationError(error, "Failed to delete task. Please try again.");
 		},
-		onSettled: () => {
-			invalidateQueries();
+		onSettled: (_data, _error, id) => {
+			invalidateQueries(id);
 		},
 		onSuccess: () => {
 			router.back();

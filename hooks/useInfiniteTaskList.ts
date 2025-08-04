@@ -2,6 +2,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { FIVE_MINUTES } from "@/constants/time";
 import { taskApi } from "../services/api";
 import type { Task } from "../types/Task";
+import { compareTasks } from "../utils/sort";
 
 interface UseInfiniteTaskListOptions {
 	pageSize?: number;
@@ -32,8 +33,10 @@ export function useInfiniteTaskList({
 		refetchOnWindowFocus: false,
 	});
 
-	// Flatten all pages into a single array of tasks
-	const tasks: Task[] = data?.pages.flatMap((page) => page.data) ?? [];
+	// Flatten all pages into a single array of tasks and sort them
+	const tasks: Task[] = (data?.pages.flatMap((page) => page.data) ?? []).sort(
+		compareTasks,
+	);
 
 	return {
 		tasks,

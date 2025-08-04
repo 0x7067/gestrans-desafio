@@ -20,6 +20,14 @@ const TaskItem = React.memo(function TaskItem({ task, onPress }: TaskItemProps) 
 		onPress(task);
 	}, [onPress, task]);
 
+	const statusIndicatorStatus = useMemo(() => {
+		return task.completed ? "completed" : "pending";
+	}, [task.completed]);
+
+	const titleStyle = useMemo(() => {
+		return [styles.title, task.completed && styles.completedTitle];
+	}, [task.completed]);
+
 	return (
 		<TouchableOpacity
 			accessible
@@ -32,7 +40,7 @@ const TaskItem = React.memo(function TaskItem({ task, onPress }: TaskItemProps) 
 			testID={`task-item-${task.id}`}
 		>
 			<View style={styles.content}>
-				<Text style={[styles.title, task.completed && styles.completedTitle]}>
+				<Text style={titleStyle}>
 					{task.title}
 				</Text>
 				{task.description && (
@@ -52,7 +60,7 @@ const TaskItem = React.memo(function TaskItem({ task, onPress }: TaskItemProps) 
 			</View>
 			<View style={styles.statusContainer}>
 				<StatusIndicator
-					status={task.completed ? "completed" : "pending"}
+					status={statusIndicatorStatus}
 					size="small"
 				/>
 			</View>

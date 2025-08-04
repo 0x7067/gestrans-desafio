@@ -129,16 +129,31 @@ describe("useTaskMutations", () => {
 				(call) => call[0].mutationFn === taskApi.create,
 			)?.[0];
 
-			// Simulate successful creation
 			act(() => {
-				createMutationOptions?.onSuccess?.({} as any, {} as any, {} as any);
-				createMutationOptions?.onSettled?.({} as any, null, {} as any, {} as any);
+				mockQueryClient.getQueryCache.mockReturnValue({
+					findAll: jest.fn(() => []),
+				});
+				createMutationOptions?.onSuccess?.(
+					{
+						id: "123",
+						createdAt: new Date().toISOString(),
+						title: "t",
+						description: "d",
+						assignee: "a",
+						completed: false,
+					} as any,
+					{} as any,
+					{} as any,
+				);
+				createMutationOptions?.onSettled?.(
+					{} as any,
+					null,
+					{} as any,
+					{} as any,
+				);
 			});
 
-			expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-				queryKey: ["tasks"],
-				exact: false,
-			});
+			expect(mockQueryClient.setQueryData).toHaveBeenCalledTimes(0);
 			expect(mockRouter.back).toHaveBeenCalled();
 		});
 
@@ -172,7 +187,12 @@ describe("useTaskMutations", () => {
 
 			act(() => {
 				updateMutationOptions?.onSuccess?.({} as any, mockTask, {} as any);
-				updateMutationOptions?.onSettled?.({} as any, null, mockTask, {} as any);
+				updateMutationOptions?.onSettled?.(
+					{} as any,
+					null,
+					mockTask,
+					{} as any,
+				);
 			});
 
 			expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({

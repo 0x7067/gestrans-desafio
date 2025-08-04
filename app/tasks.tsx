@@ -24,6 +24,7 @@ import { Dimensions } from "@/styles/dimensions";
 import { useInfiniteTaskList } from "../hooks/useInfiniteTaskList";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import type { Task } from "../types/Task";
+import { compareTasks } from "../utils/sort";
 
 export default function TaskListScreen() {
 	const router = useRouter();
@@ -55,10 +56,7 @@ export default function TaskListScreen() {
 				if (filterStatus === "incomplete") return !task.completed;
 				return true;
 			})
-			.sort((a, b) => {
-				if (a.completed === b.completed) return 0;
-				return a.completed ? 1 : -1;
-			});
+			.sort(compareTasks);
 	}, [tasksData, filterStatus]);
 
 	const handleLoadMore = useCallback(() => {
@@ -81,6 +79,8 @@ export default function TaskListScreen() {
 		[handleTaskPress],
 	);
 
+	const keyExtractor = useCallback((item: Task) => item.id, []);
+
 	// Show loading state while checking network status
 	if (isNetworkLoading) {
 		return (
@@ -97,11 +97,7 @@ export default function TaskListScreen() {
 				<Text style={styles.errorText}>
 					Network status unavailable: {networkError.message}
 				</Text>
-				<Button
-					title="Retry"
-					variant="primary"
-					onPress={() => refetch()}
-				/>
+				<Button title="Retry" variant="primary" onPress={() => refetch()} />
 			</SafeAreaView>
 		);
 	}
@@ -167,19 +163,14 @@ export default function TaskListScreen() {
 				testID="task-list"
 				data={tasks}
 				renderItem={renderTask}
-				keyExtractor={(item) => item.id}
-				contentContainerStyle={styles.listContainer}
+				keyExtractor={keyExtractor}
+				contentContainerStyle={[styles.listContainer, { paddingBottom: 100 }]}
 				showsVerticalScrollIndicator={false}
-				initialNumToRender={8}
-				maxToRenderPerBatch={5}
-				windowSize={5}
+				initialNumToRender={6}
+				maxToRenderPerBatch={3}
+				windowSize={3}
 				removeClippedSubviews={true}
-				updateCellsBatchingPeriod={100}
-				getItemLayout={(_data, index) => ({
-					length: 120,
-					offset: 120 * index,
-					index,
-				})}
+				updateCellsBatchingPeriod={50}
 				refreshControl={
 					<RefreshControl
 						testID="task-list-refresh"
@@ -190,7 +181,7 @@ export default function TaskListScreen() {
 					/>
 				}
 				onEndReached={handleLoadMore}
-				onEndReachedThreshold={PAGINATION.END_REACHED_THRESHOLD}
+				onEndReachedThreshold={0.5}
 				ListFooterComponent={() => {
 					if (isFetchingNextPage) {
 						return (
