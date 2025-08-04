@@ -1,10 +1,10 @@
+import { FIVE_MINUTES, TWENTY_FOUR_HOURS } from "@/constants/time";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { FIVE_MINUTES, TWENTY_FOUR_HOURS } from "@/constants/time";
 
 const queryClient = new QueryClient({
 	defaultOptions: {
