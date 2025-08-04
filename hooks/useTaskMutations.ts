@@ -4,8 +4,8 @@ import {
 	useMutation,
 	useQueryClient,
 } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
 import { Alert } from "react-native";
+import { useRouter } from "expo-router";
 import { taskApi, type PaginatedResponse } from "../services/api";
 import type { Task } from "../types/Task";
 import { handleMutationError } from "../utils/errorHandling";
@@ -13,21 +13,26 @@ import { compareTasks } from "../utils/sort";
 
 type InfiniteTaskData = InfiniteData<PaginatedResponse<Task>>;
 
+type CreateTaskDTO = Omit<Task, "id" | "createdAt">;
+
+type UpdateTaskDTO = Partial<Omit<Task, "id" | "createdAt">> & {
+	completed?: boolean;
+};
+
 export interface UseTaskMutationsReturn {
-	createMutation: UseMutationResult<
-		Task,
-		Error,
-		Omit<Task, "id" | "createdAt">,
-		unknown
-	>;
+	createMutation: UseMutationResult<Task, Error, CreateTaskDTO, unknown>;
 	updateMutation: UseMutationResult<
 		Task,
 		Error,
-		{ id: string; data: Partial<Task> },
+		{ id: string; data: UpdateTaskDTO },
 		unknown
 	>;
 	deleteMutation: UseMutationResult<void, Error, string, unknown>;
-	handleSave: (data: Partial<Task>, isEditing: boolean, id?: string) => void;
+	handleSave: (
+		data: CreateTaskDTO | UpdateTaskDTO,
+		isEditing: boolean,
+		id?: string,
+	) => void;
 	handleDelete: (id: string) => void;
 }
 
@@ -47,23 +52,17 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 					? [queryClient.cancelQueries({ queryKey: ["task", taskId] })]
 					: []),
 			]);
-		} catch (error) {
-			console.error("Error cancelling queries:", error);
-		}
+		} catch (error) {}
 	};
 
 	const invalidateQueries = (taskId?: string) => {
-		try {
-			queryClient.invalidateQueries({ queryKey: ["tasks"], exact: false });
-			queryClient.invalidateQueries({
-				queryKey: ["tasks", "infinite"],
-				exact: false,
-			});
-			if (taskId) {
-				queryClient.invalidateQueries({ queryKey: ["task", taskId] });
-			}
-		} catch (error) {
-			console.error("Error invalidating queries:", error);
+		queryClient.invalidateQueries({ queryKey: ["tasks"], exact: false });
+		queryClient.invalidateQueries({
+			queryKey: ["tasks", "infinite"],
+			exact: false,
+		});
+		if (taskId) {
+			queryClient.invalidateQueries({ queryKey: ["task", taskId] });
 		}
 	};
 
@@ -96,24 +95,23 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 					queryClient.setQueryData<Task[]>(["tasks"], sortedTasks);
 				}
 
-				// Update all infinite query caches
-				previousInfiniteQueries.forEach(({ queryKey, data }) => {
-					if (data?.pages) {
-						const updatedPages = data.pages.map((p, idx: number) => {
-							if (idx === 0) {
-								const sortedData = [optimisticTask, ...p.data].sort(
-									compareTasks,
-								);
-								return { ...p, data: sortedData };
-							}
-							return p;
-						});
-						queryClient.setQueryData(queryKey, {
-							...data,
-							pages: updatedPages,
-						});
-					}
-				});
+				queryClient.setQueriesData(
+					{ queryKey: ["tasks", "infinite"], exact: false },
+					(old: InfiniteTaskData | undefined) => {
+						if (!old?.pages) return old;
+						return {
+							...old,
+							pages: old.pages.map((p, idx: number) =>
+								idx === 0
+									? {
+											...p,
+											data: [optimisticTask, ...p.data].sort(compareTasks),
+										}
+									: p,
+							),
+						};
+					},
+				);
 
 				return { previousTasks, previousInfiniteQueries } as const;
 			} catch (error) {
@@ -133,7 +131,6 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 			handleMutationError(error, "Failed to create task. Please try again.");
 		},
 		onSuccess: (newTask) => {
-			// Update caches with the server response instead of invalidating
 			const previousTasks = queryClient.getQueryData<Task[]>(["tasks"]);
 			if (previousTasks) {
 				const tasksWithoutOptimistic = previousTasks.filter(
@@ -144,35 +141,10 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 				);
 				queryClient.setQueryData<Task[]>(["tasks"], sortedTasks);
 			}
-
-			// Update infinite query caches
-			const allQueries = queryClient
-				.getQueryCache()
-				.findAll({ queryKey: ["tasks", "infinite"], exact: false });
-
-			allQueries.forEach((query) => {
-				const data = query.state.data as InfiniteTaskData;
-				if (data?.pages) {
-					const updatedPages = data.pages.map((p, idx: number) => {
-						if (idx === 0) {
-							const tasksWithoutOptimistic = p.data.filter(
-								(t) => !t.id.startsWith("optimistic-"),
-							);
-							const sortedData = [newTask, ...tasksWithoutOptimistic].sort(
-								compareTasks,
-							);
-							return { ...p, data: sortedData };
-						}
-						return p;
-					});
-					queryClient.setQueryData(query.queryKey, {
-						...data,
-						pages: updatedPages,
-					});
-				}
-			});
-
 			router.back();
+		},
+		onSettled: () => {
+			invalidateQueries();
 		},
 		retry: 2,
 		retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
@@ -204,19 +176,21 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 					);
 				}
 
-				previousInfiniteQueries.forEach(({ queryKey, data: infiniteData }) => {
-					if (infiniteData?.pages) {
-						queryClient.setQueryData(queryKey, {
-							...infiniteData,
-							pages: infiniteData.pages.map((p) => ({
+				queryClient.setQueriesData(
+					{ queryKey: ["tasks", "infinite"], exact: false },
+					(old: InfiniteTaskData | undefined) => {
+						if (!old?.pages) return old;
+						return {
+							...old,
+							pages: old.pages.map((p) => ({
 								...p,
 								data: p.data.map((t: Task) =>
 									t.id === id ? { ...t, ...data } : t,
 								),
 							})),
-						});
-					}
-				});
+						};
+					},
+				);
 
 				if (previousTask) {
 					queryClient.setQueryData<Task>(["task", id], {
@@ -336,12 +310,15 @@ export function useTaskMutations(): UseTaskMutationsReturn {
 		retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
 	});
 
-	const handleSave = (data: Partial<Task>, isEditing: boolean, id?: string) => {
+	const handleSave = (
+		data: CreateTaskDTO | UpdateTaskDTO,
+		isEditing: boolean,
+		id?: string,
+	) => {
 		if (isEditing && id) {
-			updateMutation.mutate({ id, data });
+			updateMutation.mutate({ id, data: data as UpdateTaskDTO });
 		} else {
-			const createData = data as Omit<Task, "id" | "createdAt">;
-			createMutation.mutate(createData);
+			createMutation.mutate(data as CreateTaskDTO);
 		}
 	};
 

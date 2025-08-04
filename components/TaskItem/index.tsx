@@ -11,7 +11,10 @@ interface TaskItemProps {
 	onPress: (task: Task) => void;
 }
 
-const TaskItem = React.memo(function TaskItem({ task, onPress }: TaskItemProps) {
+const TaskItem = React.memo(function TaskItem({
+	task,
+	onPress,
+}: TaskItemProps) {
 	const formattedDate = useMemo(() => {
 		return new Date(task.createdAt).toLocaleDateString();
 	}, [task.createdAt]);
@@ -40,9 +43,7 @@ const TaskItem = React.memo(function TaskItem({ task, onPress }: TaskItemProps) 
 			testID={`task-item-${task.id}`}
 		>
 			<View style={styles.content}>
-				<Text style={titleStyle}>
-					{task.title}
-				</Text>
+				<Text style={titleStyle}>{task.title}</Text>
 				{task.description && (
 					<View style={styles.descriptionWrapper}>
 						<Text
@@ -59,10 +60,7 @@ const TaskItem = React.memo(function TaskItem({ task, onPress }: TaskItemProps) 
 				</View>
 			</View>
 			<View style={styles.statusContainer}>
-				<StatusIndicator
-					status={statusIndicatorStatus}
-					size="small"
-				/>
+				<StatusIndicator status={statusIndicatorStatus} size="small" />
 			</View>
 		</TouchableOpacity>
 	);

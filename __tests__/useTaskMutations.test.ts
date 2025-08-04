@@ -1,12 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react-native";
-import { useRouter } from "expo-router";
+
 import { Alert } from "react-native";
 import { useTaskMutations } from "../hooks/useTaskMutations";
 import { taskApi } from "../services/api";
 
 jest.mock("@tanstack/react-query");
-jest.mock("expo-router");
+
 jest.mock("react-native", () => ({
 	Alert: {
 		alert: jest.fn(),
@@ -18,8 +18,6 @@ const mockUseMutation = useMutation as jest.MockedFunction<typeof useMutation>;
 const mockUseQueryClient = useQueryClient as jest.MockedFunction<
 	typeof useQueryClient
 >;
-const mockUseRouter = useRouter as jest.MockedFunction<typeof useRouter>;
-
 const mockRouter = {
 	push: jest.fn(),
 	back: jest.fn(),
@@ -78,7 +76,6 @@ const mockQueryClient = {
 describe("useTaskMutations", () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockUseRouter.mockReturnValue(mockRouter);
 		mockUseQueryClient.mockReturnValue(mockQueryClient);
 
 		mockUseMutation.mockImplementation(() => ({
@@ -154,7 +151,7 @@ describe("useTaskMutations", () => {
 			});
 
 			expect(mockQueryClient.setQueryData).toHaveBeenCalledTimes(0);
-			expect(mockRouter.back).toHaveBeenCalled();
+			expect(mockRouter.back).not.toHaveBeenCalled();
 		});
 
 		it("handles creation error", () => {
@@ -202,7 +199,7 @@ describe("useTaskMutations", () => {
 			expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
 				queryKey: ["task", "1"],
 			});
-			expect(mockRouter.back).toHaveBeenCalled();
+			expect(mockRouter.back).not.toHaveBeenCalled();
 		});
 
 		it("handles update error", () => {
@@ -238,7 +235,7 @@ describe("useTaskMutations", () => {
 				queryKey: ["tasks"],
 				exact: false,
 			});
-			expect(mockRouter.back).toHaveBeenCalled();
+			expect(mockRouter.back).not.toHaveBeenCalled();
 		});
 
 		it("handles deletion error", () => {

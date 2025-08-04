@@ -65,7 +65,9 @@ describe("useInfiniteTaskList", () => {
 			refetch: jest.fn(),
 		};
 
-		mockedUseInfiniteQuery.mockReturnValue(mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>);
+		mockedUseInfiniteQuery.mockReturnValue(
+			mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>,
+		);
 
 		const { result } = renderHook(() => useInfiniteTaskList());
 
@@ -87,7 +89,9 @@ describe("useInfiniteTaskList", () => {
 			refetch: jest.fn(),
 		};
 
-		mockedUseInfiniteQuery.mockReturnValue(mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>);
+		mockedUseInfiniteQuery.mockReturnValue(
+			mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>,
+		);
 
 		const { result } = renderHook(() => useInfiniteTaskList());
 
@@ -110,7 +114,9 @@ describe("useInfiniteTaskList", () => {
 			refetch: jest.fn(),
 		};
 
-		mockedUseInfiniteQuery.mockReturnValue(mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>);
+		mockedUseInfiniteQuery.mockReturnValue(
+			mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>,
+		);
 
 		const { result } = renderHook(() => useInfiniteTaskList());
 
@@ -137,7 +143,9 @@ describe("useInfiniteTaskList", () => {
 			refetch: jest.fn(),
 		};
 
-		mockedUseInfiniteQuery.mockReturnValue(mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>);
+		mockedUseInfiniteQuery.mockReturnValue(
+			mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>,
+		);
 
 		const { result } = renderHook(() => useInfiniteTaskList());
 
@@ -158,7 +166,9 @@ describe("useInfiniteTaskList", () => {
 			refetch: jest.fn(),
 		};
 
-		mockedUseInfiniteQuery.mockReturnValue(mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>);
+		mockedUseInfiniteQuery.mockReturnValue(
+			mockInfiniteQueryResult as ReturnType<typeof useInfiniteQuery>,
+		);
 
 		renderHook(() => useInfiniteTaskList({ pageSize: 5 }));
 

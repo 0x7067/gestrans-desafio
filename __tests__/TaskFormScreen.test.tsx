@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React from "react";
 import type { UseFormReturn } from "react-hook-form";
 import TaskFormScreen from "../app/task-form";
@@ -18,7 +18,9 @@ jest.mock("../hooks/useNetworkStatus");
 
 // Mock Controller component
 interface MockControllerProps {
-	render: (props: { field: { onChange: jest.Mock; onBlur: jest.Mock; value: string } }) => React.ReactElement;
+	render: (props: {
+		field: { onChange: jest.Mock; onBlur: jest.Mock; value: string };
+	}) => React.ReactElement;
 }
 
 jest.mock("react-hook-form", () => ({
@@ -35,7 +37,7 @@ const mockUseQuery = useQuery as jest.MockedFunction<typeof useQuery>;
 const mockUseLocalSearchParams = useLocalSearchParams as jest.MockedFunction<
 	typeof useLocalSearchParams
 >;
-const mockUseRouter = useRouter as jest.MockedFunction<typeof useRouter>;
+
 const mockUseTaskForm = useTaskForm as jest.MockedFunction<typeof useTaskForm>;
 const mockUseTaskMutations = useTaskMutations as jest.MockedFunction<
 	typeof useTaskMutations
@@ -73,7 +75,7 @@ const mockRouter = {
 	prefetch: jest.fn(),
 };
 
-const mockFormHook: UseFormReturn<TaskFormData> = {
+const mockFormHook = {
 	control: {} as UseFormReturn<TaskFormData>["control"],
 	handleSubmit: jest.fn(
 		(fn) => () =>
@@ -113,7 +115,7 @@ const mockFormHook: UseFormReturn<TaskFormData> = {
 	unregister: jest.fn(),
 	register: jest.fn(),
 	setFocus: jest.fn(),
-} as UseFormReturn<TaskFormData>;
+} as unknown as UseFormReturn<TaskFormData>;
 
 const mockMutationsHook: UseTaskMutationsReturn = {
 	createMutation: {
@@ -171,7 +173,7 @@ const mockMutationsHook: UseTaskMutationsReturn = {
 describe("TaskFormScreen", () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockUseRouter.mockReturnValue(mockRouter);
+
 		mockUseTaskForm.mockReturnValue(mockFormHook);
 		mockUseTaskMutations.mockReturnValue(mockMutationsHook);
 		mockUseNetworkStatus.mockReturnValue({
